@@ -1,0 +1,65 @@
+---
+runtime: shiny
+output: html_document
+---
+```{r}
+source("preprocessing_Alin.R")
+library(networkD3)
+#defenders
+def_pos = c("LCB","CB","LB","LWB","RB","RCB","RWB")
+#midfielders
+mid_pos = c("RW","CAM","CDM","CM","LAM","LCM","LDM","LM","LW","RAM","RCM","RDM","RM")
+#forwards
+fwd_pos = c("CF","LF","LS","RF","RS","ST")
+#Reserves
+res_pos = c("RES","SUB")
+#Gk
+gk_pos = c("GK")
+
+
+data <- data %>% mutate(field_position = case_when(
+  team_position %in% def_pos ~ "Defender",
+  team_position %in% mid_pos ~ "Midfielder",
+  team_position %in% fwd_pos ~ "Forward",
+  team_position %in% res_pos ~ "Reserve",
+  team_position %in% gk_pos ~ "Goalkeeper"
+))
+
+selectInput("team", label = "Team:",
+              choices = unique(data$club), selected = "FC Barcelona")
+reactive({
+team_data <- filter(data, club %in% c(input$team))
+
+field_position_aggregation <- aggregate(wage_eur~field_position,team_data,sum)
+team_position_aggregation<-aggregate(wage_eur~team_position+field_position,team_data,sum)
+
+team_position_aggregation$team_position <- as.character(team_position_aggregation$team_position)
+team_data$short_name <- as.character(team_data$short_name)
+team_data$team_position <- as.character(team_data$team_position)
+source_array = c(rep("Budget",nrow(field_position_aggregation)),
+                 team_position_aggregation$field_position,
+                 team_data$team_position)
+destination_array = c(field_position_aggregation$field_position,
+                      team_position_aggregation$team_position,
+                      team_data$short_name)
+values_array = c(field_position_aggregation$wage_eur,team_position_aggregation$wage_eur,
+                 team_data$wage_eur)
+links_df = data.frame(
+  source=source_array,
+  
+  destination = destination_array,
+  values = values_array)
+
+nodes <- data.frame(
+  name=c(as.character(links_df$source), as.character(links_df$destination)) %>% 
+    unique()
+)
+
+links_df$IDsource <- match(links_df$source, nodes$name)-1 
+links_df$IDtarget <- match(links_df$destination, nodes$name)-1
+output$net <- renderSankeyNetwork(sankeyNetwork(Links = links_df, Nodes = nodes, Source = "IDsource", Target = "IDtarget",
+                   Value = "values", NodeID = "name"))
+})
+sankeyNetworkOutput("net")
+
+```{r}

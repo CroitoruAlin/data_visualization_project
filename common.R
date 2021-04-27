@@ -6,7 +6,7 @@ get_players_info_year <- function(year){
 get_teams_info <- function(){
   teams <- read.csv("./dataset/teams_and_leagues.csv")
   details <- read.csv(("./dataset/teams_details.csv"))
-  teams <- merge(details,teams,by.x = "ID",by.y = "url")
+  teams <- merge(details,distinct(teams),by.x = "ID",by.y = "url")
   return(teams)
 }
 

@@ -14,7 +14,7 @@ library(gifski)
 library(viridis)
 data <- get_players_info_year("20")
 
-## Question: What is the distribution of the wages?
+## Question: What is the distribution of the wages? bin??
 ggplot(data,aes(x=wage_eur),log10('x')) + 
   geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9)+
   scale_x_continuous(trans = 'log10')+
@@ -170,15 +170,7 @@ animation = ggplot(overall_nationality, aes(x=nationality,y=overall,fill=nationa
   transition_time(year)
   
 animate(animation)
-### Relationship between weight,age and overall
 
-plot_ly(data, x = ~age, y = ~weight_kg, z = ~overall, color=~overall,
-        text = ~paste('Name:', short_name, '<br>Age:', age, '<br>Weight:', weight_kg,
-                      '<br>Overall:', overall))%>%
-  add_markers() %>% 
-  layout(title="Weight vs Age vs Overall",scene = list(xaxis = list(title = 'Age'),
-                     yaxis = list(title = 'Weight'),
-                      zaxis = list(title = 'Overall')))
 ### Correlogram between card attributes
 ggpairs(select(data,pace,physic,passing,shooting,defending,dribbling))
                       
