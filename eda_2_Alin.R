@@ -3,6 +3,11 @@ library(dplyr)
 library(networkD3)
 library(ggplot2)
 library(plotly)
+library(igraph)
+library(ggraph)
+library(oce)
+library(tidyr)
+library(tibble)
 #defenders
 def_pos = c("LCB","CB","LB","LWB","RB","RCB","RWB")
 #midfielders
@@ -158,9 +163,70 @@ p <- ggplot(data_without_reserves, aes(x=wage_eur, y=score_position,
 
 
 p <- p + facet_wrap( ~ field_position,ncol=2,nrow = 2) +
+  coord_flip()+
   ggtitle("Score per position vs Wage")
 
 fig <- ggplotly(p)
 
 fig
+## If you are a national team coach, you probably want to call to the team players
+## that have a good chemistry.
+nation = "France"
 
+players_18<-get_players_info_year("18")%>%
+            subset(nationality %in% c(as.character(nation)))
+players_19<-get_players_info_year("19")%>%
+            subset(nationality %in% c(as.character(nation)))
+players_20<-get_players_info_year("20")%>%
+            subset(nationality %in% c(as.character(nation))) %>%
+            arrange(-overall) %>%
+            head(50)
+players = list(players_18,players_19,players_20)
+
+vertices = data.frame(name=as.character(players_20$short_name),
+                      overall=players_20$overall,
+                      ID=0:(nrow(players_20)-1),
+                      stringsAsFactors = FALSE)
+
+relations = data.frame(from=character(),to=character(),stringsAsFactors = FALSE)
+for (player in unique(players_20$long_name)) {
+
+  for (df in players) {
+    player_info <- df %>%
+      filter((as.character(long_name) %in% c(as.character(player))) )
+    if( nrow(player_info)>0){
+    teammates <- df %>%
+      filter((as.character(club) %in% c(as.character(player_info$club)))
+             & !(as.character(long_name) %in% c(as.character(player)))
+             &
+               (as.character(long_name) %in% as.character(players_20$long_name))
+             & (overall < player_info$overall[[1]]))
+    if(nrow(teammates)>0){
+      relations = rbind(relations, data.frame(from=
+                                                replicate(nrow(teammates),as.character(player_info$short_name)),
+                                              to=as.character(teammates$short_name), stringsAsFactors = FALSE))
+    }
+    }  
+  }
+  
+}
+relations<-relations%>%rowwise()%>%mutate(fromID = 
+  which(vertices$name == from)[[1]]-1)%>%ungroup()
+
+relations<-relations%>%rowwise()%>%mutate(toID = 
+  which(vertices$name == to)[[1]]-1)%>%ungroup()
+
+vertices$group=1
+vertices$overall=as.numeric(vertices$overall)
+forceNetwork(Links = relations, Nodes = vertices,
+             Source = "fromID", Target = "toID"
+             , NodeID = "name", Nodesize = "overall",
+             Group = "group",
+             charge=-20,
+             fontSize = 15, 
+             linkDistance = 50,opacity = 0.85
+             , zoom = TRUE,
+             radiusCalculation = JS(paste("(d.nodesize-",min(vertices$overall),")/",
+                                    as.character(max(vertices$overall)
+                                                 -min(vertices$overall)),"*10 +4")),
+             opacityNoHover = 0.15)            
