@@ -1,0 +1,1276 @@
+---
+title: Visualization for FIFA
+
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+runtime: shiny
+---
+```{r, echo='hide',message=FALSE,warning=FALSE}
+source("C:/Users/Stefana/Documents/preprocessing_Alin.R")
+
+library(GGally)
+library(png)
+library(RColorBrewer)
+library(tidyverse)
+library(wordcloud2)
+library(tm)
+library(proustr)
+library(magrittr)
+library(geonames)
+library(stringi)
+library(jpeg)
+library(grid)
+library(geosphere)
+library(leaflet)
+library(rnaturalearth)
+library(tigris)
+library(networkD3)
+library(plotly)
+library(ggplot2)
+library(viridis)
+library(ggridges)
+library(maps)
+library(leaflet)
+library(waffle)
+library(extrafont)
+library(patchwork)
+library(plotly)
+library(d3treeR)
+library(dplyr)
+library(treemap)
+library(mosaic)
+library(gganimate)
+library(gifski)
+library(viridis)
+library(sunburstR)
+library(rlist)
+library(shiny)
+library(reshape2)
+library("ggimage")
+library(imager)
+library(ggrepel)
+library(hrbrthemes)
+
+```
+
+## Visualization for FIFA game
+This project takes advantage of data visualization to help the gamers better understand the insights of the FIFA game and make the best decisions in their playtime. We think that our plots are best suited for the career mode, where the gamers need to show their management skills to direct a football club and even a national team.
+
+The project will analyze different aspects of the data available from years 2015 to 2020 to see how the players’ profiles evolved and how famous players compare to each other through time.
+
+### League selection
+Before a gamer starts a career in a football club, he/she needs to choose a championship that best matches their expectation. The plots in this section can be helpful for this decision.
+
+The first question that would pop up for this kind of decision would be: What is the financial power of league X? To answer that question we added the next visualization that emphasizes the mean of players salary in each country(league).
+
+
+```{r, echo='hide',message=FALSE,warning=FALSE}
+average_salaries_by_country = aggregate(wage_eur~countries,data,mean)
+world <- ne_countries(returnclass = "sp")
+world_salaries <- geo_join(world,average_salaries_by_country,by_df = 'countries',by_sp = 'name')
+
+colors <- colorNumeric( palette="YlOrRd", domain=world_salaries$wage_eur, na.color="gray")
+
+hover_text <- paste(
+  "Country: ", world_salaries$name,"<br/>", 
+  "Wage: ", world_salaries$wage_eur, "<br/>",
+  sep="") %>%
+  lapply(htmltools::HTML)
+
+avg_salaries_ctr <-leaflet(world_salaries)%>%
+  setView(lat=60,lng=0,zoom=2)%>%
+  addPolygons(
+  fillColor = ~colors(wage_eur),
+  label = hover_text,
+  weight = 1,
+  opacity = 1,
+  color = "white",
+  fillOpacity = 0.9) %>%
+  addLegend( pal=colors, values=~wage_eur, opacity=0.7, title = "Average wage per country", position = "bottomleft" )
+
+avg_salaries_ctr
+
+
+```
+
+The above plot represents the reality of FIFA 20, but throughout the years leagues are added and excluded from FIFA. Thus, to have a better picture we included the next plot as well, that represent the league salaries from FIFA 16 to FIFA 20 (FIFA 15 did not have salary data)
+```{r, echo='hide',message=FALSE,warning=FALSE}
+
+players_16<-get_players_info_year("16")
+players_16 <- dplyr::filter(players_16, wage_eur > 1000)
+players_17<-get_players_info_year("17")
+players_17 <- dplyr::filter(players_17, wage_eur > 1000)
+players_18<-get_players_info_year("18")
+players_18 <- dplyr::filter(players_18, wage_eur > 1000)
+players_19<-get_players_info_year("19")
+players_19 <- dplyr::filter(players_19, wage_eur > 1000)
+players_20<-get_players_info_year("20")
+players_20 <- dplyr::filter(players_20, wage_eur > 1000)
+
+
+players_16_teams <- merge(players_16,teams,by.x='club',by.y='Name')
+average_16_salaries <-aggregate(wage_eur~countries,players_16_teams,mean)
+average_16_salaries$year=2016
+
+players_17_teams <- merge(players_17,teams,by.x='club',by.y='Name')
+average_17_salaries <-aggregate(wage_eur~countries,players_17_teams,mean)
+average_17_salaries$year=2017
+
+players_18_teams <- merge(players_18,teams,by.x='club',by.y='Name')
+average_18_salaries <-aggregate(wage_eur~countries,players_18_teams,mean)
+average_18_salaries$year=2018
+
+players_19_teams <- merge(players_19,teams,by.x='club',by.y='Name')
+average_19_salaries <-aggregate(wage_eur~countries,players_19_teams,mean)
+average_19_salaries$year=2019
+
+players_20_teams <- merge(players_20,teams,by.x='club',by.y='Name')
+average_20_salaries <-aggregate(wage_eur~countries,players_20_teams,mean)
+average_20_salaries$year=2020
+
+salaries <- rbind(average_16_salaries,average_17_salaries,average_18_salaries,
+                 average_19_salaries,average_20_salaries)
+world <- ne_countries(returnclass = "sf")
+world_overall <- merge(world,salaries,by.y = 'countries',by.x = 'name')
+world_overall=dplyr::mutate(world_overall,text_image=paste(name,", wage=",wage_eur))
+
+
+geo <- list(
+            showland = TRUE,
+            showocean=TRUE,
+            oceancolor=toRGB("#C0C0C0"),
+            landcolor = toRGB("#808080"))
+
+plot_geo(world_overall,frame=~year) %>%
+  add_trace(z=~wage_eur, type='choropleth',
+            zmin=0,zmax=max(world_overall$wage_eur),
+            colorscale="YlOrRd",
+            locations=~iso_a3,
+            text=~text_image, hoverinfo='text') %>%
+  layout(geo=geo,title = 'Average wage per country')
+
+
+```
+
+When a player would like to choose his starting team he might consider choosing a country from where the majority of players are coming from.
+```{r, echo='hide',message=FALSE,warning=FALSE}
+
+world_nationalities <- geo_join(world,countries_players,by_df = 'nationality',by_sp = 'name')
+
+colors <- colorNumeric( palette="YlOrRd", domain=c(0,1000), na.color="gray")
+
+hover_text <- paste(
+  "Country: ", world_nationalities$nationality,"<br/>",
+  "Num. players: ", world_nationalities$n, "<br/>",
+  sep="") %>%
+  lapply(htmltools::HTML)
+
+world_salaries <- geo_join(world,countries_players2,by_df = 'countries',by_sp = 'name')
+
+
+colors_2 <- colorNumeric( palette="YlOrRd", domain=c(0,3000), na.color="gray")
+
+hover_text_2 <- paste(
+  "Country: ", world_salaries$countries,"<br/>",
+  "Num. players: ", world_salaries$n, "<br/>",
+  sep="") %>%
+  lapply(htmltools::HTML)
+
+l <- leaflet(world_nationalities)%>%
+  setView(lat=60,lng=0,zoom=2)%>%
+  addPolygons(
+    fillColor = ~colors(n),
+    label = hover_text,
+    weight = 1,
+    opacity = 1,
+    color = "white",
+    fillOpacity = 0.9) %>%
+  addLegend( pal=colors, values=~n, opacity=0.7, title = "Number of players coming from", position = "bottomleft" )
+
+l2 <- leaflet(world_salaries)%>%
+  setView(lat=60,lng=0,zoom=2)%>%
+  addPolygons(
+    fillColor = ~colors_2(n),
+    label = hover_text_2,
+    weight = 1,
+    opacity = 1,
+    color = "white",
+    fillOpacity = 0.9) %>%
+  addLegend( pal=colors_2, values=~n, opacity=0.7, title = "Number of players", position = "bottomleft" )
+
+l
+
+```
+
+At the same time, he might choose the country where more people are playing.
+
+```{r, echo='hide',message=FALSE,warning=FALSE}
+  
+l2
+
+```
+When thinking about the quality of the leagues, seeing the distribution of teams across countries and continents can be helpful:
+```{r, echo='hide',message=FALSE,warning=FALSE}
+
+counCon=read.delim2("C://Users//Stefana//Desktop//Countries-Continents.txt",sep = ",",header=1)
+counCon$Country[counCon$Country=="CZ"]<-"Czech Rep."
+counCon$Country[counCon$Country=="United Arab Emirates"]<-"UAE"
+counCon$Country[counCon$Country=="Korea, North"]<-"North Korea"
+counCon$Country[counCon$Country=="	Netherlands"]<-"Holland"
+counCon$Country[counCon$Country=="Korea, South"]<-"South Korea"
+counCon$Country[counCon$Country=="US"]<-"United States"
+teams<-read.csv("C://Users//Stefana//Desktop//teams.csv")
+teacounCon = merge(counCon,teams,by.x='Country',by.y='countries')
+teacounCon["Count"]=1
+
+teacounCon$Name[teacounCon$Name=="Colo-Colo"]<-"Colo Colo"
+teacounCon$Name[teacounCon$Name=="SV Zulte-Waregem"]<-"SV Zulte Waregem"
+teacounCon$Name[teacounCon$Name=="Oud-Heverlee Leuven"]<-"Oud Heverlee Leuven"
+teacounCon$Name[teacounCon$Name=="Waasland-Beveren"]<-"Waasland Beveren"
+teacounCon$Name[teacounCon$Name=="Sint-Truidense VV"]<-"Paris Saint Germain"
+teacounCon$Name[teacounCon$Name=="Paris Saint-Germain"]<-"Colo Colo"
+teacounCon$Name[teacounCon$Name=="AS Saint-Ă‰tienne"]<-"AS Saint Ă‰tienne"
+teacounCon$Name[teacounCon$Name=="FC Sochaux-MontbĂ©liard"]<-"	FC Sochaux MontbĂ©liard"
+teacounCon$Name[teacounCon$Name=="Podbeskidzie Bielsko-BiaĹ‚a"]<-"Podbeskidzie Bielsko BiaĹ‚a"
+teacounCon$Name[teacounCon$Name=="FC Lausanne-Sport"]<-"FC Laussane Sport"
+teacounCon$Name[teacounCon$Name=="Shimizu S-Pulse"]<-"Shimizu S Pulse"
+cols=data.frame(paste(teacounCon$Continent, teacounCon$Country, teacounCon$Name, sep="-"), teacounCon$Count)
+p <- sunburst(cols, legend=0)
+p
+```
+
+### Team selection
+
+This section presents plots helpful for selecting a team.
+
+Again we will start by looking at the financial aspect. In the below plot, it can be seen the budget of one team and how is it distributed among the players positions. This type of plot can be useful to detect positions where the club need investments or players that are a burden for the club budget. For example in FCSB (Steaua) case, there is an unused substitution that has a salary larger than players from the first 11.
+```{r, echo='hide',message=FALSE,warning=FALSE}
+#defenders
+def_pos = c("LCB","CB","LB","LWB","RB","RCB","RWB")
+#midfielders
+mid_pos = c("RW","CAM","CDM","CM","LAM","LCM","LDM","LM","LW","RAM","RCM","RDM","RM")
+#forwards
+fwd_pos = c("CF","LF","LS","RF","RS","ST")
+#Reserves
+res_pos = c("RES","SUB")
+#Gk
+gk_pos = c("GK")
+
+
+data <- data %>% dplyr::mutate(field_position = case_when(
+  team_position %in% def_pos ~ "Defender",
+  team_position %in% mid_pos ~ "Midfielder",
+  team_position %in% fwd_pos ~ "Forward",
+  team_position %in% res_pos ~ "Reserve",
+  team_position %in% gk_pos ~ "Goalkeeper"
+))
+
+shinyApp(ui = fluidPage(selectInput("team", label = "Team:",
+            choices = unique(data$club), selected = "FCSB (Steaua)"),
+             sankeyNetworkOutput("net")),
+server = function(input,output,session){
+  
+      node_df<-reactive({
+team_data <- dplyr::filter(data, club %in% c(input$team))
+
+field_position_aggregation <- aggregate(wage_eur~field_position,team_data,sum)
+team_position_aggregation<-aggregate(wage_eur~team_position+field_position,team_data,sum)
+
+team_position_aggregation$team_position <- as.character(team_position_aggregation$team_position)
+team_data$short_name <- as.character(team_data$short_name)
+team_data$team_position <- as.character(team_data$team_position)
+source_array = c(rep("Budget",nrow(field_position_aggregation)),
+                 team_position_aggregation$field_position,
+                 team_data$team_position)
+destination_array = c(field_position_aggregation$field_position,
+                      team_position_aggregation$team_position,
+                      team_data$short_name)
+values_array = c(field_position_aggregation$wage_eur,team_position_aggregation$wage_eur,
+                 team_data$wage_eur)
+links_df = data.frame(
+  source=source_array,
+  
+  destination = destination_array,
+  values = values_array)
+
+nodes<-data.frame(
+  name=c(as.character(links_df$source), as.character(links_df$destination)) %>% 
+    unique()
+)
+links_df$IDsource <- match(links_df$source, nodes$name)-1 
+links_df$IDtarget <- match(links_df$destination, nodes$name)-1
+list(links=links_df,nodes=nodes)
+})
+
+     output$net <- renderSankeyNetwork({dataframes <- node_df()
+  sankeyNetwork(Links = dataframes$links, Nodes = dataframes$nodes, Source = "IDsource", Target = "IDtarget",
+                   Value = "values", NodeID = "name")})
+
+},options=list(height=700))
+
+```
+
+When choosing a team you might want to pick one that is more offensive or more defensive, in that case a word cloud plot might help you see the most popular traits of a club.
+
+```{r, echo='hide',message=FALSE,warning=FALSE}
+shinyApp(ui=fluidPage(fluidPage(selectInput("team", label = "Team:",
+            choices = unique(data$club), selected = "FC Barcelona"),
+             wordcloud2Output("word_cloud")
+             )),
+         server = function(input,output,session){
+            mywords<-reactive({
+            nation<-input$team
+            
+            tags = data %>% dplyr::filter(as.character(club)==as.character(input$team)) %>%
+              dplyr::select(player_tags)
+            
+            cleaned = gsub('[{ }*Â]', '', flatten_chr(str_split(tags$player_tags,",")))
+            
+            plyr::count(cleaned) %>% arrange(freq)
+            })
+            
+            output$word_cloud<-renderWordcloud2( wordcloud2(mywords(),  minRotation = -pi/4, maxRotation = -pi/4,
+                       backgroundColor = "white", color="#69b3a2"))
+},options=list(height=500))
+      
+```
+
+When deciding what team would you like to play with you can check what country has the most players playing there and also from which countries.
+
+```{r, echo='hide',message=FALSE,warning=FALSE}
+
+ options(geonamesUsername="bugmenotuser")
+ uk = GNcountryInfo()
+ country_locations = data.frame(matrix(ncol=18,nrow=0))
+ colnames(country_locations) = colnames(uk)
+
+ n = 1
+ for(i in 1:nrow(uk)){
+   clean_name = iconv(uk$countryName[i],from="UTF-8",to='ASCII//TRANSLIT')
+
+   for(j in countries){
+     if (grepl(j,clean_name,fixed=TRUE) ){
+       country_locations = rbind(country_locations,uk[i,])
+       country_locations$countryName[n] <- j
+       n = n+1
+     }
+   }
+ }
+
+ country_locations[country_locations$countryName=="Russia","east"] <- 180
+ country_locations[country_locations$countryName=="Russia","west"] <- 40
+
+ country_locations = country_locations[country_locations$countryCode != "UM" & country_locations$countryCode != "VI",]
+ country_locations = country_locations[country_locations$countryName != "Ireland" & country_locations$countryCode != "GB",]
+
+ country_locations = country_locations[-14,]
+
+ teams_and_players_and_latlong = merge(teams_and_players,country_locations,by.x='countries',by.y='countryName')
+ teams_and_players_and_latlong2 = merge(teams_and_players_and_latlong,country_locations,by.x='nationality',by.y='countryName')
+
+
+ pairs = teams_and_players_and_latlong2[as.character(teams_and_players_and_latlong2$nationality) != as.character(teams_and_players_and_latlong2$countries),]
+
+
+ pairs$center.x.x = (as.numeric(pairs$east.x) + as.numeric(pairs$west.x))/2
+ pairs$center.x.y = (as.numeric(pairs$east.y) + as.numeric(pairs$west.y))/2
+ pairs$center.y.x = (as.numeric(pairs$south.x) + as.numeric(pairs$north.x))/2
+ pairs$center.y.y = (as.numeric(pairs$south.y) + as.numeric(pairs$north.y))/2
+
+
+
+ all_pairs = pairs[c("center.x.x","center.x.y","center.y.x","center.y.y")]
+ all_pairs = drop_na(all_pairs)
+
+ colnames(all_pairs)=c("long1","long2","lat1","lat2")
+
+ all_pairs$long1 = as.numeric(all_pairs$long1)
+ all_pairs$long2 = as.numeric(all_pairs$long2)
+ all_pairs$lat1 = as.numeric(all_pairs$lat1)
+ all_pairs$lat2 = as.numeric(all_pairs$lat2)
+
+ # add points and names of cities
+
+ country_locations$center.x = (as.numeric(country_locations$east) + as.numeric(country_locations$west))/2
+ country_locations$center.y = (as.numeric(country_locations$south) + as.numeric(country_locations$north))/2
+
+ world_map <- map_data("world")
+
+ p <- ggplot(world_map, aes(x=long, y = lat, group=group))+
+   geom_polygon(fill="lightgray")+
+   coord_equal()+
+   scale_fill_identity()+
+   theme(legend.position = "None")+
+   geom_point(data=country_locations,aes(x=center.x, y = center.y) ,inherit.aes=FALSE,alpha=0.8,size=0.5)+
+   geom_segment( aes(x=long1,y=lat1,xend=long2,yend=lat2),data=all_pairs,
+                 arrow=TRUE,inherit.aes = FALSE,alpha=0.03, size= 0.2, colour="blue")+
+   geom_text(aes(x=center.x, y = center.y, label= countryName),data=country_locations,inherit.aes=FALSE,size=3,position= position_nudge(y=1))+coord_cartesian(xlim=c(-25,65),ylim=c(25,65))
+
+ ggplotly(p)
+
+
+```
+
+
+A player might want to pick a team that has better attack or defense:
+```{r, echo='hide',message=FALSE,warning=FALSE}
+
+D<-c("LCB","LCM","CB","LB","LWB","RB","RCB","RWB")
+M<-c("RW", "CAM","CDM","CM","LAM","LCM","LDM","LM","LW","RAM","RCM","RDM","RM")
+F<-c("CF","LF","LS","RF","RS","ST")
+R<-c("RES","SUB")
+playerss20=get_players_info_year("20")
+playerss20$team_position<-ifelse(playerss20$team_position %in% D, "Defence", ifelse(playerss20$team_position %in% M, "Midfield",
+                                                                                    ifelse(playerss20$team_position %in% F, "Attack", "Rerserve")))
+playerss15=get_players_info_year("15")
+playerss15$team_position<-ifelse(playerss15$team_position %in% D, "Defence", ifelse(playerss15$team_position %in% M, "Midfield",
+                                                                                    ifelse(playerss15$team_position %in% F, "Attack", "Rerserve")))
+playerss16=get_players_info_year("16")
+playerss16$team_position<-ifelse(playerss16$team_position %in% D, "Defence", ifelse(playerss16$team_position %in% M, "Midfield",
+                                                                                    ifelse(playerss16$team_position %in% F, "Attack", "Rerserve")))
+playerss17=get_players_info_year("17")
+playerss17$team_position<-ifelse(playerss17$team_position %in% D, "Defence", ifelse(playerss17$team_position %in% M, "Midfield",
+                                                                                    ifelse(playerss17$team_position %in% F, "Attack", "Rerserve")))
+playerss18=get_players_info_year("18")
+playerss18$team_position<-ifelse(playerss18$team_position %in% D, "Defence", ifelse(playerss18$team_position %in% M, "Midfield",
+                                                                                    ifelse(playerss18$team_position %in% F, "Attack", "Rerserve")))
+playerss19=get_players_info_year("19")
+playerss19$team_position<-ifelse(playerss19$team_position %in% D, "Defence", ifelse(playerss19$team_position %in% M, "Midfield",
+                                                                                    ifelse(playerss19$team_position %in% F, "Attack", "Rerserve")))
+
+meanOverall20<-summarise(group_by(playerss20,club),meanOverall=mean(overall))
+meanPos20<-summarise(group_by(playerss20,club, team_position),meanOverall=mean(overall))
+meanPos20<-dcast(meanPos20, club~team_position)
+meanPos20["year"]="2020"
+meanPos20["overall"]<-meanOverall20["meanOverall"]
+
+meanOverall19<-summarise(group_by(playerss19,club), meanOverall=mean(overall))
+meanPos19<-summarise(group_by(playerss19,club, team_position), meanOverall=mean(overall))
+meanPos19<-dcast(meanPos19, club~team_position)
+meanPos19["year"]="2019"
+meanPos19["overall"]<-meanOverall20["meanOverall"]
+
+meanOverall18<-summarise(group_by(playerss18,club), meanOverall=mean(overall))
+meanPos18<-summarise(group_by(playerss18,club, team_position), meanOverall=mean(overall))
+meanPos18<-dcast(meanPos18, club~team_position)
+meanPos18["year"]="2018"
+meanPos18["overall"]<-meanOverall18["meanOverall"]
+
+meanOverall17<-summarise(group_by(playerss17,club), meanOverall=mean(overall))
+meanPos17<-summarise(group_by(playerss17,club, team_position), meanOverall=mean(overall))
+meanPos17<-dcast(meanPos17, club~team_position)
+meanPos17["year"]="2017"
+meanPos17["overall"]<-meanOverall17["meanOverall"]
+
+meanOverall16<-summarise(group_by(playerss16,club), meanOverall=mean(overall))
+meanPos16<-summarise(group_by(playerss16,club, team_position), meanOverall=mean(overall))
+meanPos16<-dcast(meanPos16, club~team_position)
+meanPos16["year"]="2016"
+meanPos16["overall"]<-meanOverall16["meanOverall"]
+
+meanOverall15<-summarise(group_by(playerss15,club), meanOverall=mean(overall))
+meanPos15<-summarise(group_by(playerss15,club, team_position), meanOverall=mean(overall))
+meanPos15<-dcast(meanPos15, club~team_position)
+meanPos15["year"]="2015"
+meanPos15["overall"]<-meanOverall15["meanOverall"]
+
+teamstop30<-unique(playerss20[0:85, "club"])
+teamstop30<-list.append(teamstop30,c("FCSB (Steaua)","Dinamo BucureĹźti","Universitatea Craiova","CFR Cluj","Gaz Metan MediaĹź","Politehnica IaĹźi",
+                                     "Astra Giurgiu","FC Viitorul"))
+meanoverallteams1520<-bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(meanPos15,meanPos16),meanPos17),meanPos18),
+                                          meanPos19), meanPos20)
+teamss<-subset(meanoverallteams1520, select=-year )
+teamsss=melt(teamss, id.var="club")
+teamsss["year"]=c(rep(c(rep("2015",596),rep("2016",602), rep("2017",652),rep("2018", 677), rep("2019",679),rep("2020",698)),5))
+
+
+D<-c("LCB","LCM","CB","LB","LWB","RB","RCB","RWB")
+M<-c("RW", "CAM","CDM","CM","LAM","LCM","LDM","LM","LW","RAM","RCM","RDM","RM")
+F<-c("CF","LF","LS","RF","RS","ST")
+players20=get_players_info_year(("20"))
+
+gks=players20[which(players20[,'team_position'] == 'GK'), ]
+gks["xpos"]=400
+gks["ypos"]=50
+cbs=players20[which(players20[,'team_position'] == 'CB'), ]
+cbs["xpos"]=400
+cbs["ypos"]=123
+lbs=players20[which(players20[,'team_position'] == 'LB'), ]
+lbs["xpos"]=140
+lbs["ypos"]=135
+lcbs=players20[which(players20[,'team_position'] == 'LCB'), ]
+lcbs["xpos"]=288
+lcbs["ypos"]=123
+rcbs=players20[which(players20[,'team_position'] == 'RCB'), ]
+rcbs["xpos"]=530
+rcbs["ypos"]=123
+rbs=players20[which(players20[,'team_position'] == 'RB'), ]
+rbs["xpos"]=660
+rbs["ypos"]=123
+cdms=players20[which(players20[,'team_position'] == 'CDM'), ]
+cdms["xpos"]=400
+cdms["ypos"]=200
+rdms=players20[which(players20[,'team_position'] == 'RDM'), ]
+rdms["xpos"]=530
+rdms["ypos"]=200
+ldms=players20[which(players20[,'team_position'] == 'LDM'), ]
+ldms["xpos"]=288
+ldms["ypos"]=200
+lwbs=players20[which(players20[,'team_position'] == 'LWB'), ]
+lwbs["xpos"]=140
+lwbs["ypos"]=200
+rwbs=players20[which(players20[,'team_position'] == 'RWB'), ]
+rwbs["xpos"]=660
+rwbs["ypos"]=200
+cms=players20[which(players20[,'team_position'] == 'CM'), ]
+cms["xpos"]=400
+cms["ypos"]=276
+lcms=players20[which(players20[,'team_position'] == 'LCM'), ]
+lcms["xpos"]=260
+lcms["ypos"]=276
+lms=players20[which(players20[,'team_position'] == 'LM'), ]
+lms["xpos"]=130
+lms["ypos"]=276
+rms=players20[which(players20[,'team_position'] == 'RM'), ]
+rms["xpos"]=650
+rms["ypos"]=276
+rcms=players20[which(players20[,'team_position'] == 'RCM'), ]
+rcms["xpos"]=520
+rcms["ypos"]=276
+cams=players20[which(players20[,'team_position'] == 'CAM'), ]
+cams["xpos"]=400
+cams["ypos"]=350
+lams=players20[which(players20[,'team_position'] == 'LAM'), ]
+lams["xpos"]=280
+lams["ypos"]=350
+lws=players20[which(players20[,'team_position'] == 'LW'), ]
+lws["xpos"]=130
+lws["ypos"]=350
+rams=players20[which(players20[,'team_position'] == 'RAM'), ]
+rams["xpos"]=530
+rams["ypos"]=350
+rws=players20[which(players20[,'team_position'] == 'RW'), ]
+rws["xpos"]=671
+rws["ypos"]=350
+cfs=players20[which(players20[,'team_position'] == 'CF'), ]
+cfs["xpos"]=400
+cfs["ypos"]=483
+lfs=players20[which(players20[,'team_position'] == 'LF'), ]
+lfs["xpos"]=270
+lfs["ypos"]=483
+rfs=players20[which(players20[,'team_position'] == 'RF'), ]
+rfs["xpos"]=530
+rfs["ypos"]=483
+sts=players20[which(players20[,'team_position'] == 'ST'), ]
+sts["xpos"]=400
+sts["ypos"]=483
+
+
+img <- png::readPNG("C://Users//Stefana//Desktop//playersPic//field.png")
+positions<-bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(gks,lbs),lcbs),rcbs),
+                                                                                                                                                                                                                                                           rbs), ldms),rdms),lms),cams),rms),sts),lws),rws),cbs),rcms),cfs),cdms),lcms),rdms),rams),rfs),cms),lfs),lams),rwbs),lwbs)
+teamstop30<-unique(playerss20[0:85, "club"])
+teamstop30<-list.append(teamstop30,c("FCSB (Steaua)","Dinamo BucureĹźti","Universitatea Craiova","CFR Cluj","Gaz Metan MediaĹź","Politehnica IaĹźi",
+                                     "Astra Giurgiu","FC Viitorul"))
+                                     
+positionstop<-filter(positions,club %in% teamstop30)
+positionstop30 = read.csv("C:/Users/Stefana/Downloads/playersImg1.csv")
+positionstop["img"]=positionstop30["img"]
+
+shinyApp(ui=  fluidPage(
+  
+    selectInput(inputId="team", h3("Choose team"), 
+                choices = unique(playerss20$club),selected="FC Barcelona"),
+    plotOutput(outputId = "teamScore"),
+    plotOutput(outputId = "team")
+  
+)
+, server=function(input, output) {
+  output$teamScore <- renderPlot({ggplot(filter(teamsss, club==input$team),aes(x=year,y=value,color=variable,group=variable))+ 
+      geom_point()+
+      geom_path()+
+      theme_minimal()
+  
+    
+  })
+  positionsTeam<-reactive({filter(positionstop30,club==input$team)[1:11,1:108]})
+  output$team <- renderPlot({
+    ggplot(positionsTeam(), aes(x=xpos, y=ypos))+annotation_custom(rasterGrob(img, width = unit(1,"npc"), 
+                                                                              height = unit(1,"npc")))+
+      geom_point()+
+      geom_label_repel(aes(label=paste("(",overall,")",short_name),fontface="bold"),hjust=0, vjust=0)+
+      xlim(0,800)+
+      ylim(0,611)+
+      theme(axis.text = element_blank(),
+            axis.title = element_blank()
+      ) +geom_image(aes(image=img))
+  })
+  
+},options=list(height=1000))
+```
+
+
+### Transfers
+
+Once the gamer has a team, he can start to make transfers to strengthen it. The purpose of this section would be to help the games choose the best option for their use case. 
+
+The first plot is a histogram that emphasizes the distribution of the players wages.The X axis is logarithmic.
+```{r, echo='hide',message=FALSE,warning=FALSE}
+shinyApp(ui=fluidPage(plotOutput('wages')),
+         server = function(input,output,session){
+           wages<-ggplot(data,aes(x=wage_eur),log10('x')) +
+          geom_histogram(fill="#69b3a2", color="#e9ecef", alpha=0.9,bins = 15)+
+          scale_x_continuous(trans = 'log10')+
+          ggtitle("Wage Distribution")
+          output$wages<-renderPlot(wages)
+         })
+
+players16=get_players_info_year('16')
+players17=get_players_info_year('17')
+players18=get_players_info_year('18')
+players19=get_players_info_year('19')
+players20=get_players_info_year('20')
+
+
+players16["year"]="2016"
+players17["year"]="2017"
+players18["year"]="2018"
+players19["year"]="2019"
+players20["year"]="2020"
+players20[,c(45:105)]<-sapply(players20[, c(45:105)], as.character)
+players17[,70]<-sapply(players17[, 70], as.character)
+players1520<-bind_rows(bind_rows(bind_rows(bind_rows(players16,players17),players18),players19),
+                       players20)
+players16<-filter(players16, wage_eur!=1000)
+players16<-filter(players16, wage_eur!=0)
+players17<-filter(players17, wage_eur!=1000)
+players17<-filter(players17, wage_eur!=0)
+players18<-filter(players18, wage_eur!=1000)
+players18<-filter(players18, wage_eur!=0)
+players19<-filter(players19, wage_eur!=1000)
+players19<-filter(players19, wage_eur!=0)
+players20<-filter(players20, wage_eur!=1000)
+players20<-filter(players20, wage_eur!=0)
+
+
+
+players1520<-bind_rows(bind_rows(bind_rows(bind_rows(players16,players17),players18),players19),
+                       players20)
+
+players1520$wageCategory <- ifelse(players1520$wage_eur >=1000 & players1520$wage_eur <= 5000, '1000-5000',
+                                 ifelse(players1520$wage_eur >5000 & players1520$wage_eur <=10000, '5000-10000',
+                                        ifelse(players1520$wage_eur >10000&players1520$wage_eur<=15000, '10000-15000',
+                                               ifelse(players1520$wage_eur >15000, '>15000',''))))
+
+players1520$wageCategory<-factor(players1520$wageCategory,levels=c("1000-5000", "5000-10000", "10000-15000", ">15000"))
+
+
+
+
+shinyApp(ui=fluidPage(plotOutput('wagesYears')),
+         server = function(input,output,session){
+           wagesYears<-ggplot(players1520, aes(x=wageCategory, fill=year)) +geom_bar(stat="count",position="dodge") 
+          output$wagesYears<-renderPlot(wagesYears)
+         })
+
+
+```
+
+
+The following plot can be used to have an idea about the salary range of one player, by looking at his overall score.
+
+```{r, echo='hide',message=FALSE,warning=FALSE}
+shinyApp(ui=fluidPage(plotOutput('box_plot')),
+         server = function(input,output,session){
+           box_plot_wage_overall<-ggplot(data = data,mapping = aes(x = as.factor(overall), y = wage_eur)) +
+        geom_boxplot()+
+        scale_y_continuous(trans = 'log10')+
+        xlab("Overall")+
+        ggtitle("Wage vs overall score")+
+        theme(axis.text.x = element_text(angle = 60))
+      output$box_plot<-renderPlot(box_plot_wage_overall)
+
+         })
+
+
+
+```
+
+Also when choosing a price for a transfers you can check the average price for a player from a certain country.
+
+
+```{r, echo='hide',message=FALSE,warning=FALSE}
+
+
+# Libraries
+library(tidyverse)
+library(viridis)
+library(patchwork)
+library(hrbrthemes)
+library(circlize)
+library(chorddiag)  #devtools::install_github("mattflor/chorddiag")
+
+players_18_19 = merge(players_18_teams,players_19_teams,by.x='long_name',by.y='long_name')
+
+transfers = filter(players_18_19,countries.x!=countries.y)
+
+data_new = data.frame(matrix(ncol=length(unique(countries)),nrow=length(unique(countries)),0))
+colnames(data_new) <- unique(countries)
+rownames(data_new) <- unique(countries)
+
+means = aggregate(transfers$wage_eur.x,list(transfers$countries.x,transfers$countries.y),FUN=mean)
+
+for (row in 1:nrow(means)){
+  origin <- means[row,"Group.1"]
+  destination <- means[row,"Group.2"]
+  price <- means[row,"x"]
+  if(origin != "" && destination != ""){
+    data_new[origin,destination] <- price
+  }
+}
+
+
+data_new[data_new<40000] <- 0
+
+data_new2 <- data_new
+
+to_delete = c()
+for(i in 1:nrow(data_new)){
+  if(all(data_new[i,]==0) & all(data_new[,i]==0)){
+    to_delete = c(to_delete,i)
+  }
+}
+
+data_new2 = data_new2[-to_delete,-to_delete]
+
+
+shinyApp(ui=fixedPage(chorddiagOutput('chord',height = 650)),
+         server = function(input,output,session){
+chord <- chorddiag(as.matrix(data_new2), type="directional",showTicks=FALSE, groupnameFontsize = 14, )
+
+output$chord<-renderChorddiag(chord)
+         },options=list(height=700))
+
+
+
+```
+
+The following figure illustrates the distribution of the positions that can also be useful to see if the player chosen for transfer is an outlier or not. Because if he is, then probably the transfer sum is also unusual.
+
+```{r, echo='hide',message=FALSE,warning=FALSE}
+data_positions <- dplyr::filter(data, team_position %in% c("LW","ST","RW","LM","CM","RM","CAM","CDM","CB",
+                                               "LB","RB","GK"))
+overall_dist_pos<-ggplot2::ggplot(data_positions,aes(y=team_position, x=overall, fill=team_position))+
+  ggridges::geom_density_ridges(alpha=0.6,stat="binline", bins=20, scale=1) +
+  ggridges::theme_ridges() +
+  ggplot2::theme(
+    legend.position="none"
+  ) +
+  ggplot2::xlab("") +
+  ggplot2::ylab("Player Position")
+shinyApp(ui=fluidPage(plotOutput('overall_d')),
+         server = function(input,output,session){
+           output$overall_d<-renderPlot(overall_dist_pos)
+         })
+
+
+
+```
+
+There are some positions that a player can take in a team that may result in them having a larger wage than others, despite them having the same potential. This can be seen in the following plot:
+```{r, echo='hide',message=FALSE,warning=FALSE}
+#defenders
+players20=get_players_info_year('20')
+players_20=get_players_info_year('20')
+players20[players20=="LCB"]<-"D"
+players20[players20=="LCM"]<-"D"
+players20[players20=="CB"]<-"D"
+players20[players20=="LB"]<-"D"
+players20[players20=="LWB"]<-"D"
+players20[players20=="RB"]<-"D"
+players20[players20=="RCB"]<-"D"
+players20[players20=="RWB"]<-"D"
+
+lcb<-(length(which(players_20$team_position== "LCB")))
+lcm<-(length(which(players_20$team_position== "LCM")))
+cb<-(length(which(players_20$team_position== "CB")))
+lb<-(length(which(players_20$team_position== "LB")))
+lwb<-(length(which(players_20$team_position== "LWB")))
+rb<-(length(which(players_20$team_position== "RB")))
+rcb<-(length(which(players_20$team_position== "RCB")))
+rwb<-(length(which(players_20$team_position== "RWB")))
+
+#midfielders
+players20[players20=="RW"]<-"M"
+players20[players20=="CAM"]<-"M"
+players20[players20=="CDM"]<-"M"
+players20[players20=="CM"]<-"M"
+players20[players20=="LAM"]<-"M"
+players20[players20=="LCM"]<-"M"
+players20[players20=="LDM"]<-"M"
+players20[players20=="LM"]<-"M"
+players20[players20=="LW"]<-"M"
+players20[players20=="RAM"]<-"M"
+players20[players20=="RCM"]<-"M"
+players20[players20=="RDM"]<-"M"
+players20[players20=="RM"]<-"M"
+
+rw<-(length(which(players_20$team_position== "RW")))
+cam<-(length(which(players_20$team_position== "CAM")))
+cdm<-(length(which(players_20$team_position== "CDM")))
+cm<-(length(which(players_20$team_position== "CM")))
+lam<-(length(which(players_20$team_position== "LAM")))
+lcm<-(length(which(players_20$team_position== "LCM")))
+ldm<-(length(which(players_20$team_position== "LDM")))
+lm<-(length(which(players_20$team_position== "LM")))
+lw<-(length(which(players_20$team_position== "LW")))
+ram<-(length(which(players_20$team_position== "RAM")))
+rcm<-(length(which(players_20$team_position== "RCM")))
+rdm<-(length(which(players_20$team_position== "RDM")))
+rm<-(length(which(players_20$team_position== "RM")))
+
+#forwards
+players20[players20=="CF"]<-"F"
+players20[players20=="LF"]<-"F"
+players20[players20=="LS"]<-"F"
+players20[players20=="RF"]<-"F"
+players20[players20=="RS"]<-"F"
+players20[players20=="ST"]<-"F"
+
+cf<-(length(which(players_20$team_position== "CF")))
+lf<-(length(which(players_20$team_position== "LF")))
+ls<-(length(which(players_20$team_position== "LS")))
+rf<-(length(which(players_20$team_position== "RF")))
+rs<-(length(which(players_20$team_position== "RS")))
+st<-(length(which(players_20$team_position== "ST")))
+
+#reserves
+players20[players20=="RES"]<-"R"
+players20[players20=="SUB"]<-"R"
+
+res<-(length(which(players_20$team_position== "RES")))
+sub<-(length(which(players_20$team_position== "SUB")))
+
+gk<-(length(which(players_20$team_position== "GK")))
+
+##What is the relationship between wage, potential and the main team_positions?
+playerss20<-filter(players20, players20$team_position!="R")
+
+
+
+shinyApp(ui=fluidPage(plotOutput('players')),
+         server = function(input,output,session){
+           players<-ggplot(playerss20)+geom_point(aes(x=potential,y=wage_eur,colour=team_position),alpha=0.5)
+          output$players<-renderPlot(players)
+         })
+```
+The gamer should also consider the assigned positions to choose a wage below or above the mean wage of all players:
+```{r, fig.align="left",echo='hide',message=FALSE,warning=FALSE}
+playersD=filter(players_20,"D"==players20$team_position)
+playersF=filter(players_20,"F"==players20$team_position)
+playersGK=filter(players_20,"GK"==players20$team_position)
+playersM=filter(players_20,"M"==players20$team_position)
+playersR=filter(players_20,"R"==players20$team_position)
+players_pos=c('D'=nrow(playersD),'F'=nrow(playersF),'GK'=nrow(playersGK), 'M'=nrow(playersM),'R'=nrow(playersR))/300
+
+playersDM=filter(playersD,playersD$wage_eur>9456.943)
+playersFM=filter(playersF,playersF$wage_eur>9456.943)
+playersGKM=filter(playersGK,playersGK$wage_eur>9456.943)
+playersMM=filter(playersM,playersM$wage_eur>9456.943)
+playersRM=filter(playersR,playersR$wage_eur>9456.943)
+players_pos_above_mean=c('D'=nrow(playersDM),'F'=nrow(playersFM),'GK'=nrow(playersGKM),'M'=nrow(playersMM),'R'=nrow(playersRM))/80
+
+#invisible(font_import(pattern="C:/Users/Stefana/Downloads/Font-Awesome-4.7.0/Font-Awesome-4.7.0/fonts/"))
+
+shinyApp(ui=fluidPage(plotOutput('p2')),
+         server = function(input,output,session){
+           p2<-waffle(players_pos_above_mean, colors=c("#8A9B0F","#F8CA00", "#E97F02","#7A1717","#490A3D"), 
+           use_glyph = "male", glyph_size = 7,title="Players with wage>mean", rows=5, xlab="1 player=80 players")
+          output$p2<-renderPlot(p2)
+         })
+
+shinyApp(ui=fluidPage(plotOutput('p1')),
+         server = function(input,output,session){
+           p1<-waffle(players_pos, colors=c("#8A9B0F","#F8CA00","#E97F02","#7A1717","#490A3D"),
+           use_glyph="male",glyph_size=7,title="Players' positions",rows=5, xlab="1 player=300 players")
+          output$p1<-renderPlot(p1)
+         })
+
+```
+To establish what kind of players his team might be lacking, he could take into consideration the distribution of positions among players. 
+```{r, echo='hide',message=FALSE,warning=FALSE}
+main_positions<-c("GoalKeepers","Reserves","Reserves","Forwards","Forwards","Forwards","Forwards","Forwards","Forwards",
+                  "Midfielders","Midfielders","Midfielders","Midfielders","Midfielders","Midfielders",
+                  "Midfielders","Midfielders","Midfielders","Midfielders","Midfielders","Midfielders","Midfielders",
+                  "Defenders","Defenders","Defenders","Defenders","Defenders","Defenders","Defenders","Defenders")
+all_positions<-c("GK","RES","SUB","CF","LF","LS","RF","RS","ST","RW","CAM","CDM","CM","LAM","LCM","LDM","LM","LW","RAM","RCM","RDM",
+                 "RM","LCM","LCM","CB","LB","LWB","RB","RCB","RWB")
+counts<-c(gk, res,sub, cf,lf,ls,rf,rs,st, rw,cam,cdm,cm,lam,lcm,ldm,lm,lw,ram,rcm,rdm,rm, lcb,lcm,cb,lb,lwb,rb,rcb,rwb)
+team_pos_counts<-data.frame(main_positions,all_positions,counts)
+
+shinyApp(ui=fluidPage(d3treeOutput('tree')),
+         server = function(input,output,session){
+           tree<-d3treeR::d3tree2(treemap(team_pos_counts,index=c("main_positions","all_positions"),vSize="counts"), rootname = "Player position distribution")
+          output$tree<-renderD3tree(tree)
+         },options=list(height=500))
+```
+One could expect that the international reputation might be influenced by the player's social skills
+```{r, echo='hide',message=FALSE,warning=FALSE}
+playersss=get_players_info_year("20")
+playersss$negativeTraits<-0
+playersss$negativeTraits[grepl("Selfish", playersss$player_traits)]<-1
+playersss$negativeTraits[grepl("Argues with Officials", playersss$player_traits)&playersss$negativeTraits==1]<-2
+playersss$negativeTraits[grepl("Argues with Officials", playersss$player_traits)&playersss$negativeTraits==0]<-1
+
+playersss$positiveTraits<-0
+playersss$positiveTraits[grepl("Leadership", playersss$player_traits)]<-1
+playersss$positiveTraits[grepl("Crowd Favourite", playersss$player_traits)&playersss$positiveTraits==1]<-2
+playersss$positiveTraits[grepl("Crowd Favourite", playersss$player_traits)&playersss$positiveTraits==0]<-1
+
+
+
+shinyApp(ui=fluidPage(plotOutput('hex1')),
+         server = function(input,output,session){
+           hex1<-ggplot(playersss, aes(x=negativeTraits, y=international_reputation))+geom_hex(bins=8)+xlim(-1,3)+ylim(-1,6)
+          output$hex1<-renderPlot(hex1)
+         })
+shinyApp(ui=fluidPage(plotOutput('hex2')),
+         server = function(input,output,session){
+           hex2<-ggplot(playersss, aes(x=positiveTraits, y=international_reputation))+geom_hex(bins=8)+xlim(-1,3)+ylim(-1,6) 
+          output$hex2<-renderPlot(hex2)
+         })
+
+
+```
+When making a transfer of a top player, the trend of his overall should be considered:
+```{r, echo='hide',message=FALSE,warning=FALSE,error=TRUE}
+players_15<-get_players_info_year("15")
+players_16<-get_players_info_year("16")
+players_17<-get_players_info_year("17")
+players_18<-get_players_info_year("18")
+players_19<-get_players_info_year("19")
+players_20<-get_players_info_year("20")
+top10players20=players_20[0:10,]
+top10players15=filter(players_15,long_name %in% top10players20$long_name)
+top10players16=filter(players_16,long_name %in% top10players20$long_name)
+top10players17=filter(players_17,long_name %in% top10players20$long_name)
+top10players18=filter(players_18,long_name %in% top10players20$long_name)
+top10players19=filter(players_19,long_name %in% top10players20$long_name)
+
+top10players15["year"]="2015"
+top10players16["year"]="2016"
+top10players17["year"]="2017"
+top10players18["year"]="2018"
+top10players19["year"]="2019"
+top10players20["year"]="2020"
+
+top10players20[, c(45:105)] <- sapply(top10players20[, c(45:105)], as.character)
+top10players17[, 70] <- sapply(top10players17[, 70], as.character)
+top10players1520<-bind_rows(bind_rows(bind_rows(bind_rows(bind_rows(top10players15,top10players16),top10players17),top10players18),
+                                      top10players19),top10players20)
+
+top10players1520 %>%
+  plot_ly(x=top10players1520$potential,y=top10players1520$international_reputation,symbol=top10players1520$short_name,frame=top10players1520$year)%>%
+  layout(title="Top 10 players potential vs international reputation")
+```
+There are exciting conclusions that stand out in the below plot. For example, we can see that the defending score is negatively correlated with shooting. This means that if you have a defender with good shooting, then he can be an essential player in your team when it comes to corners.
+
+```{r, echo='hide',message=FALSE,warning=FALSE}
+corr_plot<-ggpairs(select(data,pace,physic,passing,shooting,defending,dribbling))
+shinyApp(ui=fluidPage(plotOutput('corr_plot')),
+         server = function(input,output,session){
+           output$corr_plot<-renderPlot(corr_plot)
+         })
+
+
+```
+
+Another aspect that a gamer could be interested in is: what would be the proper age to transfer a player if the results are significant in the short term? The following plot explore this, together with the weight of the players.
+```{r, echo='hide',message=FALSE,warning=FALSE}
+data <- data %>% dplyr::mutate(age_facets = case_when(
+  age <= 20 ~ "Age <=20",
+  age >20 & age<=25 ~ "20 < Age <=25",
+  age>25 & age<=30  ~ "25 < Age <=30",
+   age>30 & age<=35  ~ "30 < Age <=35",
+   age>35  ~"Age >35"
+
+))
+
+data$age_facets<-as.factor(data$age_facets)
+
+fig<-ggplot(data, aes(x=weight_kg, y=overall,text = short_name)) +
+  geom_point(size=0.4) +
+  facet_wrap( ~ age_facets,ncol=3,nrow = 2) +
+  ggtitle("Overall vs Weight")
+
+ggplotly(fig)
+
+
+```
+
+Sometimes, players can be more useful for the team in a new position than the one that they were labeled with. The next cell shows a player score for each position to let the gamers decide if the respective player meets their conditions.
+
+```{r, echo='hide',message=FALSE,warning=FALSE}
+ palette <- colorRampPalette(brewer.pal(9, "Blues"))
+ colours <- scale_colour_gradientn(colours = palette(100), limits=c(1, 100))
+ field <- readPNG("C:/Users/Stefana/Downloads/dataset/field.png")
+
+shinyApp(ui=fluidPage(selectInput("club", label = "Club:",choices = unique(data$club), selected="FC Barcelona"),
+selectInput("player", label = "Player:",choices = c("L.Messi"), selected="L.Messi"),
+plotOutput('field_plot'),
+plotOutput('stats_plot')
+
+),
+server = function(input,output,session){
+  
+ observe({
+     input_player<-dplyr::filter(data, club %in% c(input$club))
+     updateSelectInput(getDefaultReactiveDomain(),"player", choices=input_player$short_name, selected = input_player$short_name[1])
+ })
+
+
+ triple_pos_val <-reactive({
+ player_data = dplyr::filter(data, short_name %in% c(input$player) & !(team_position %in% c("GK"))) %>%
+               select(ls,st,rs,lw,lf,cf,rf,rw,lam,cam,ram,lm,
+                      lcm,cm,rcm,rm,lwb,ldm,cdm,rdm,rwb,lb,
+                      lcb,cb,rcb,rb)
+ if (nrow(player_data)==1){
+   for(i in 1:ncol(player_data)) {
+     player_data[,i]=as.character(player_data[,i])
+     split_val <- strsplit(player_data[,i],split="\\+")
+     s <- as.numeric(split_val[[1]][1])+as.numeric(split_val[[1]][2])
+     player_data[,i]<-s
+   }
+
+ x_pos = c(80,80,80,65,65,65,65,65,55,55,55,45,45,45,45,45,30,30,30,30,30,20,20,20,20,20)
+ y_pos = c(70,50,30,90,70,50,30,10,70,50,30,90,70,50,30,10,90,70,50,30,10,90,70,50,30,10)
+data.frame(x=x_pos,y=y_pos,overall=c(player_data$ls,player_data$st,player_data$rs,player_data$lw,player_data$lf,player_data$cf,player_data$rf,player_data$rw,player_data$lam,player_data$cam,player_data$ram,player_data$lm,player_data$lcm,player_data$cm,player_data$rcm,player_data$rm,player_data$lwb,player_data$ldm,player_data$cdm,player_data$rdm,player_data$rwb,player_data$lb,player_data$lcb,player_data$cb,player_data$rcb,player_data$rb))
+
+ }else{
+   data.frame()
+ }
+ })
+
+ output$field_plot<-renderPlot({triple_pos_df<-triple_pos_val()
+
+   if(nrow(triple_pos_df)>0){
+     ggplot(triple_pos_df, aes(x=x, y=y, color = overall, label=as.character(overall))) +
+         ggtitle(input$player)+
+         annotation_custom(rasterGrob(field,
+                                      width = unit(1,"npc"),
+                                      height = unit(1,"npc")),
+                           -Inf, Inf, -Inf, Inf)+
+         geom_point(shape=15,size=20)+
+         geom_label()+
+         xlim(0,100)+
+         ylim(0,100)+
+         colours+
+         theme(axis.text.x = element_blank(),
+               axis.ticks.x = element_blank(),
+               axis.text.y = element_blank(),
+               axis.ticks.y = element_blank(),
+               axis.title.x = element_blank(),
+               axis.title.y = element_blank())
+     }
+ })
+
+ stats_plot<-reactive({
+     player_stats = dplyr::filter(data, short_name %in% c(input$player)) %>%
+     dplyr::select(pace,shooting,passing,dribbling,defending,physic)
+
+   if(nrow(player_stats)>0){
+     data.frame(name=c("Pace","Shooting","Passing","Dribbling","Defending",
+                                  "Physic"),value=c(player_stats$pace,player_stats$shooting,
+                                                    player_stats$passing,player_stats$dribbling,
+                                                    player_stats$defending,player_stats$physic))
+   } else{
+   data.frame()
+   }
+ })
+ output$stats_plot<-renderPlot({stats_plot_df<-stats_plot()
+   if(nrow(stats_plot_df)>0){
+     stats_plot_df%>%
+     dplyr::mutate(name = reorder(name, value)) %>%
+     ggplot( aes(x=name, y=value) ) +
+       geom_segment( aes(x=name ,xend=name, y=0, yend=value), color="#002424", stat="identity") +
+       geom_point(size=3, color="#00bdbd") +
+       coord_flip()+
+       ylim(0,100)+
+       xlab("Player_stats") +
+       ylab("")
+   }
+ })
+
+
+},options=list(height=1000))
+
+
+```
+
+There are some features that describe the efficiency of players in certain positions (attack, midfield and defense). The next figure exploits these features and shows the salary according to them. This is helpful because it shows how a player compares to other players in the same position.
+
+```{r, echo='hide',message=FALSE,warning=FALSE}
+
+data_without_reserves <- dplyr::filter(data,field_position %in% c("Forward","Midfielder",
+                                                           "Defender","Goalkeeper"))
+
+data_without_reserves <- data_without_reserves %>% dplyr::mutate(score_position = case_when(
+  field_position %in% c("Defender")~(as.numeric(defending_marking)+as.numeric(defending_standing_tackle)+as.numeric(defending_sliding_tackle))/3.0,
+  field_position %in% c("Midfielder")~(as.numeric(skill_dribbling+skill_curve)+as.numeric(skill_fk_accuracy)+as.numeric(skill_long_passing)+as.numeric(skill_ball_control)+as.numeric(movement_acceleration)+as.numeric(movement_sprint_speed)+
+                                     as.numeric(movement_agility)+as.numeric(movement_reactions)+as.numeric(movement_balance))/10.0,
+  field_position %in% c("Forward")~(as.numeric(attacking_crossing)+as.numeric(attacking_finishing)+as.numeric(attacking_heading_accuracy)+as.numeric(attacking_short_passing)+as.numeric(attacking_volleys))/5,
+  field_position  %in% c("Goalkeeper")~(as.numeric(goalkeeping_kicking)+as.numeric(goalkeeping_positioning)+as.numeric(goalkeeping_reflexes))/3.0))
+shinyApp(ui=fluidPage(plotOutput("score_wage")),
+         server = function(input,output,session){
+           p <- ggplot(data_without_reserves, aes(x=wage_eur, y=score_position,
+                                       text = short_name,color=field_position))+
+            geom_point(size=0.4) +
+      facet_wrap( ~ field_position,ncol=2,nrow = 2) +
+    coord_flip()+
+    ggtitle("Score per position vs Wage")
+    output$score_wage<-renderPlot(p)
+         })
+
+
+```
+
+### International Career
+
+In international competitions, players do not have many training sessions together. Thus, while calling players for the first representative, a coach's essential criteria is chemistry. The following plot is a network where the nodes are players, and the edges reveal if two players worked for a club at the same time in the last three years. The node size is the overall score of that respective player.
+```{r}
+shinyApp(ui=fluidPage(selectInput("nationalTeam", label = "National Team:",
+              choices = unique(data$nationality), selected="France"),
+              forceNetworkOutput('net_national')),
+         server = function(input,output,session){
+           
+network <-reactive({
+nation<-input$nationalTeam
+players_18<-get_players_info_year("18")%>%
+            subset(nationality %in% c(as.character(nation)))
+players_19<-get_players_info_year("19")%>%
+            subset(nationality %in% c(as.character(nation)))
+players_20<-get_players_info_year("20")%>%
+            subset(nationality %in% c(as.character(nation))) %>%
+            arrange(-overall) %>%
+            head(50)
+players = list(players_18,players_19,players_20)
+
+vertices = data.frame(name=as.character(players_20$long_name),
+                      overall=players_20$overall,
+                      ID=0:(nrow(players_20)-1),
+                      stringsAsFactors = FALSE)
+
+relations = data.frame(from=character(),to=character(),stringsAsFactors = FALSE)
+for (player in unique(players_20$long_name)) {
+
+  for (df in players) {
+    player_info <- df %>%
+      dplyr::filter((as.character(long_name) %in% c(as.character(player))) )
+    if( nrow(player_info)>0){
+    teammates <- df %>%
+      dplyr::filter((as.character(club) %in% c(as.character(player_info$club)))
+             & !(as.character(long_name) %in% c(as.character(player)))
+             &
+               (as.character(long_name) %in% as.character(players_20$long_name))
+             & (overall < player_info$overall[[1]]))
+    if(nrow(teammates)>0){
+      relations = rbind(relations, data.frame(from=
+                                                replicate(nrow(teammates),as.character(player_info$long_name)),
+                                              to=as.character(teammates$long_name), stringsAsFactors = FALSE))
+    }
+    }
+  }
+
+}
+relations<-relations%>%rowwise()%>%dplyr::mutate(fromID =
+  which(vertices$name == from)[[1]]-1)%>%ungroup()
+
+relations<-relations%>%rowwise()%>%dplyr::mutate(toID =
+  which(vertices$name == to)[[1]]-1)%>%ungroup()
+
+vertices$group=1
+vertices$overall=as.numeric(vertices$overall)
+list(relations=relations,vertices=vertices)
+})
+
+output$net_national<-renderForceNetwork({forceNet<-network()
+  forceNetwork(Links = forceNet$relations, Nodes = forceNet$vertices,
+             Source = "fromID", Target = "toID"
+             , NodeID = "name", Nodesize = "overall",
+             Group = "group",
+             charge=-20,
+             fontSize = 15,
+             linkDistance = 55,opacity = 0.9
+             , zoom = TRUE,
+             radiusCalculation = JS(paste("(d.nodesize-",min(forceNet$vertices$overall),")/",
+                                    as.character(max(forceNet$vertices$overall)
+                                              -min(forceNet$vertices$overall)),"*10+4")),
+             opacityNoHover = 0.15)
+})
+
+         },options=list(height=700))
+
+```
+
+
+The following plot is useful for choosing the team for international career because it shows the evolution of the national overall score through time. So, a gamer can detect if one national team is at its peak or is in a downfall state. Also, this plot can be used to choose a league, because when a league is added in FIFA the overall score of that country is affected in one way or another. For example, when Romanian first league was added in FIFA more lower rated romanian players were, also, included, causing the overall score to drop.
+
+
+```{r, echo='hide',message=FALSE,warning=FALSE}
+
+countries_with_football_culture <- c("Germany","England","Spain","Italy","Romania","Poland","Russia",
+                                     "Brazil","Argentina","United States","France","Portugal",
+                                     "Holland","Belgium","Chile","Poland","Scotland","Ireland","Turkey","Greece",
+                                      "Senegal","Uruguay","Austria","Switzerland","Denmark",
+                                     "Sweden","Norway")
+players_16_overall_nationality <- dplyr::filter(players_16,nationality%in%countries_with_football_culture)
+players_16_overall_nationality$year = 2016
+players_17_overall_nationality <-dplyr::filter(players_17,nationality%in%countries_with_football_culture)
+players_17_overall_nationality$year = 2017
+players_18_overall_nationality <- dplyr::filter(players_18,nationality%in%countries_with_football_culture)
+players_18_overall_nationality$year = 2018
+players_19_overall_nationality <- dplyr::filter(players_19,nationality%in%countries_with_football_culture)
+players_19_overall_nationality$year = 2019
+players_20_overall_nationality <- dplyr::filter(players_20,nationality%in%countries_with_football_culture)
+players_20_overall_nationality$year = 2020
+
+overall_nationality <- rbind(players_16_overall_nationality,players_17_overall_nationality,players_18_overall_nationality,                          players_19_overall_nationality,players_20_overall_nationality)
+
+shinyApp(ui=fluidPage(plotOutput('nationality_overall')),
+         server = function(input,output,session){
+           output$nationality_overall<-renderPlot(nationality_overall)
+         })
+nationality_overall<-ggplot(overall_nationality, aes(x=nationality,y=overall,fill=nationality)) +
+  geom_violin() +
+  scale_fill_viridis(discrete=TRUE) +
+  scale_color_viridis(discrete=TRUE) +
+  coord_flip()+
+  facet_grid(~year,scale="free",space="free")+
+  theme(
+    legend.position="none"
+  )
+
+  
+```
+### References
++ https://www.data-to-viz.com/graph/chord.html
++ https://www.r-graph-gallery.com/179-show-a-map-with-leaflet-r.html
++ https://www.data-to-viz.com/story/MapConnection.html
++ https://www.data-to-viz.com/graph/bubble.html
++ https://www.data-to-viz.com/graph/sankey.html
++ https://sofifa.com/team/241
++ https://sofifa.com/player/241/ryan-giggs/140036
++ https://www.data-to-viz.com/graph/network.html
++ https://www.data-to-viz.com/graph/wordcloud.html
++ https://www.data-to-viz.com/graph/violin.html
++ https://www.data-to-viz.com/graph/sunburst.html
++ https://www.data-to-viz.com/graph/treemap.html
++ https://shiny.rstudio.com/tutorial/written-tutorial/lesson1/
++ https://ggplot2-book.org/
+
+
+
+
