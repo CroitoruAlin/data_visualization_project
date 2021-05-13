@@ -1,5 +1,6 @@
 source("common.R")
 library(dplyr)
+library(plyr)
 fifa_20_data <- get_players_info_year("20")
 data <- filter(fifa_20_data, wage_eur > 1000)
 
@@ -19,5 +20,10 @@ for (team in teams$league_name){
   column_countries <- c(column_countries, countries[which(leagues==team)])
 }
 teams$countries = column_countries
+
+teams_and_players = merge(data,teams,by.x='club',by.y='Name')
+
+countries_players = dplyr::count(teams_and_players,nationality)
+countries_players2 = dplyr::count(teams_and_players,countries)
 
 data = merge(data,teams,by.x='club',by.y='Name')
